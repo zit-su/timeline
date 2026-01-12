@@ -3,20 +3,59 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
-<title>Timeline Demo</title>
+<title>Friends Timeline</title>
 
+<!-- Firebase COMPAT SDKs (IMPORTANT) -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
 <style>
-body{margin:0;background:#0e0e0e;color:#fff;font-family:sans-serif}
-header{padding:14px;text-align:center;font-size:18px;background:#121212}
-.card{background:#1a1a1a;margin:12px;padding:12px;border-radius:16px}
-button{background:#1e88e5;color:#fff;border:none;padding:10px 16px;border-radius:10px}
-input,textarea{width:100%;background:#111;color:#fff;border:1px solid #333;padding:8px;border-radius:10px}
-img,video{width:100%;border-radius:14px}
-.expired{text-align:center;color:#ff5252;font-weight:bold}
+body{
+  margin:0;
+  background:#0f0f0f;
+  color:#fff;
+  font-family:system-ui,sans-serif;
+}
+header{
+  background:#121212;
+  padding:14px;
+  text-align:center;
+  font-size:18px;
+}
+.card{
+  background:#1a1a1a;
+  margin:12px;
+  padding:12px;
+  border-radius:16px;
+}
+button{
+  background:#1e88e5;
+  border:none;
+  color:#fff;
+  padding:10px 16px;
+  border-radius:10px;
+  font-size:14px;
+}
+input,textarea{
+  width:100%;
+  background:#111;
+  color:#fff;
+  border:1px solid #333;
+  padding:8px;
+  border-radius:10px;
+  margin-top:6px;
+}
+img{
+  width:100%;
+  border-radius:14px;
+}
+.expired{
+  text-align:center;
+  color:#ff5252;
+  font-weight:bold;
+}
+.hidden{display:none}
 </style>
 </head>
 
@@ -24,41 +63,52 @@ img,video{width:100%;border-radius:14px}
 
 <header>📸 Friends Timeline</header>
 
-<div id="login" class="card">
+<!-- LOGIN -->
+<div id="loginBox" class="card">
   <button onclick="login()">Login with Google</button>
 </div>
 
-<div id="app" style="display:none">
+<!-- APP -->
+<div id="app" class="hidden">
 
-<div class="card">
-  <input type="file" id="file">
-  <textarea id="caption" placeholder="What's new?"></textarea>
-  <button onclick="createPost()">Post</button>
-</div>
+  <!-- CREATE POST -->
+  <div class="card">
+    <input type="file" id="file">
+    <textarea id="caption" placeholder="What's happening?"></textarea>
+    <button onclick="createPost()">Post</button>
+  </div>
 
-<div id="timeline"></div>
+  <!-- TIMELINE -->
+  <div id="timeline"></div>
 
 </div>
 
 <script>
+/* ================= FIREBASE INIT ================= */
 firebase.initializeApp({
-  apiKey: "AIzaSyBPF1VE82Y3VkZe6IibjqKxBC-XHjM_Wco",
+  apiKey: "AIzaSyBsJiEtH_lxeSgKH9ez8Iz0p1wy9svFLyc",
   authDomain: "chat-2024-ff149.firebaseapp.com",
   databaseURL: "https://chat-2024-ff149-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "chat-2024-ff149"
+  projectId: "chat-2024-ff149",
+  appId: "1:146349109253:web:0d3677e4239b7a7d19ac6c"
 });
 
 const auth = firebase.auth();
 const db = firebase.database();
 
-/* 👉 PUT YOUR CLOUDFLARE WORKER UPLOAD URL HERE */
-const UPLOAD_URL = "https://timeline-upload.sunnymavale.workers.dev/";
+/* ============ CLOUDFLARE WORKER URL ============ */
+const UPLOAD_URL = "https://timeline-upload.sunnymavale.workers.dev/upload";
 
-auth.onAuthStateChanged(u=>{
-  if(u){
-    login.style.display="none";
-    app.style.display="block";
+/* ================= AUTH ================= */
+auth.onAuthStateChanged(user=>{
+  if(user){
+    loginBox.classList.add("hidden");
+    app.classList.remove("hidden");
+    ensureUser();
     loadTimeline();
+  }else{
+    loginBox.classList.remove("hidden");
+    app.classList.add("hidden");
   }
 });
 
@@ -66,25 +116,47 @@ function login(){
   auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
 }
 
+/* ================= USER INIT ================= */
+function ensureUser(){
+  const u = auth.currentUser;
+  db.ref("users/"+u.uid).update({
+    name: u.displayName,
+    photo: u.photoURL
+  });
+}
+
+/* ================= CREATE POST ================= */
 async function createPost(){
   const f = file.files[0];
-  if(!f || f.size > 10*1024*1024){
+  if(!f){
+    alert("Select a file");
+    return;
+  }
+  if(f.size > 10*1024*1024){
     alert("Max 10MB allowed");
     return;
   }
 
   const fd = new FormData();
-  fd.append("file",f);
+  fd.append("file", f);
 
-  const r = await fetch(UPLOAD_URL,{method:"POST",body:fd});
-  const d = await r.json();
+  const res = await fetch(UPLOAD_URL,{
+    method:"POST",
+    body:fd
+  });
+
+  const data = await res.json();
+  if(!data.url){
+    alert("Upload failed");
+    return;
+  }
 
   const uid = auth.currentUser.uid;
   const id = Date.now();
 
   db.ref("posts/"+uid+"/"+id).set({
-    url: d.url,
-    caption: caption.value,
+    url: data.url,
+    caption: caption.value || "",
     time: Date.now()
   });
 
@@ -92,29 +164,32 @@ async function createPost(){
   caption.value="";
 }
 
+/* ================= LOAD TIMELINE ================= */
 function loadTimeline(){
   const uid = auth.currentUser.uid;
   timeline.innerHTML="";
 
-  db.ref("friends/"+uid).on("value",f=>{
+  db.ref("friends/"+uid).on("value",snap=>{
     timeline.innerHTML="";
-    f.forEach(fr=>{
-      db.ref("posts/"+fr.key).once("value",ps=>{
+    snap.forEach(friend=>{
+      db.ref("posts/"+friend.key).once("value",ps=>{
         ps.forEach(p=>{
-          const d=p.val();
-          const age=Date.now()-d.time;
-          const card=document.createElement("div");
+          const d = p.val();
+          const age = Date.now() - d.time;
+
+          const card = document.createElement("div");
           card.className="card";
 
-          if(age>7*24*60*60*1000){
-            card.innerHTML="<div class='expired'>Timeline expired</div>";
+          if(age > 7*24*60*60*1000){
+            card.innerHTML = `<div class="expired">Timeline expired</div>`;
           }else{
-            card.innerHTML=`
+            card.innerHTML = `
               <img src="${d.url}">
-              <p>${d.caption||""}</p>
-              <button onclick="share('${d.url}')">Share</button>
+              <p>${d.caption}</p>
+              <button onclick="sharePost('${d.url}')">Share</button>
             `;
           }
+
           timeline.appendChild(card);
         });
       });
@@ -122,8 +197,13 @@ function loadTimeline(){
   });
 }
 
-function share(u){
-  navigator.share({url:u});
+/* ================= SHARE ================= */
+function sharePost(url){
+  if(navigator.share){
+    navigator.share({url});
+  }else{
+    alert("Sharing not supported");
+  }
 }
 </script>
 
